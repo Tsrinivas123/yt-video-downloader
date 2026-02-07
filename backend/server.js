@@ -9,6 +9,9 @@ const execPromise = util.promisify(exec);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Cookies file path
+const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
+
 // Middleware
 app.use(cors({
   origin: [
@@ -22,7 +25,7 @@ app.use(cors({
 app.use(express.json());
 app.use('/downloads', express.static('downloads'));
 
-// Create downloads directory
+// Create downloads folder
 if (!fs.existsSync('./downloads')) {
   fs.mkdirSync('./downloads');
 }
@@ -30,11 +33,11 @@ if (!fs.existsSync('./downloads')) {
 // Health check
 app.get('/', (req, res) => {
   res.json({
-    status: 'YouTube Downloader Backend is running!',
+    status: 'Backend Running ✅',
     endpoints: {
-      videoInfo: 'POST /api/video-info',
-      download: 'POST /api/download',
-      getLink: 'POST /api/get-link'
+      videoInfo: '/api/video-info',
+      getLink: '/api/get-link',
+      download: '/api/download'
     }
   });
 });
@@ -47,48 +50,50 @@ app.post('/api/video-info', async (req, res) => {
     const { url } = req.body;
 
     if (!url) {
-      return res.status(400).json({ error: 'URL is required' });
+      return res.status(400).json({ error: 'URL required' });
     }
 
-    console.log('Fetching video info:', url);
+    console.log('Fetching info:', url);
 
-    const { stdout } = await execPromise(
-      `python3 -m yt_dlp --dump-json --no-playlist "${url}"`
-    );
+    const command = `
+      python3 -m yt_dlp 
+      --cookies "${COOKIES_PATH}" 
+      --dump-json 
+      --no-playlist 
+      "${url}"
+    `;
 
-    const videoData = JSON.parse(stdout);
+    const { stdout } = await execPromise(command);
 
-    const formats = videoData.formats
+    const data = JSON.parse(stdout);
+
+    const formats = data.formats
       .filter(f => f.vcodec !== 'none' && f.acodec !== 'none' && f.height)
       .map(f => ({
-        format_id: f.format_id,
         quality: `${f.height}p`,
         ext: f.ext,
-        filesize: f.filesize || 'Unknown',
-        fps: f.fps || 30
-      }));
-
-    const uniqueFormats = Array.from(
-      new Map(formats.map(item => [item.quality, item])).values()
-    ).sort((a, b) => parseInt(b.quality) - parseInt(a.quality));
+        fps: f.fps || 30,
+        size: f.filesize || 'Unknown'
+      }))
+      .sort((a, b) => parseInt(b.quality) - parseInt(a.quality));
 
     res.json({
-      title: videoData.title,
-      thumbnail: videoData.thumbnail,
-      duration: videoData.duration,
-      uploader: videoData.uploader,
-      view_count: videoData.view_count,
-      formats: uniqueFormats,
+      title: data.title,
+      thumbnail: data.thumbnail,
+      duration: data.duration,
+      uploader: data.uploader,
+      views: data.view_count,
+      formats,
       url
     });
 
-  } catch (error) {
+  } catch (err) {
 
-    console.error(error);
+    console.error(err);
 
     res.status(500).json({
-      error: 'Failed to fetch video info',
-      details: error.message
+      error: 'Failed to fetch info',
+      details: err.message
     });
   }
 });
@@ -100,33 +105,37 @@ app.post('/api/get-link', async (req, res) => {
 
     const { url, quality } = req.body;
 
-    let command;
+    let format = 'bestvideo+bestaudio/best';
 
     if (quality) {
       const q = quality.replace('p', '');
+      format = `bestvideo[height<=${q}]+bestaudio/best`;
+    }
 
-      command = `python3 -m yt_dlp -f "bestvideo[height<=${q}]+bestaudio/best" --get-url "${url}"`;
-    }
-    else {
-      command = `python3 -m yt_dlp -f "bestvideo+bestaudio/best" --get-url "${url}"`;
-    }
+    const command = `
+      python3 -m yt_dlp 
+      --cookies "${COOKIES_PATH}"
+      -f "${format}"
+      --get-url
+      "${url}"
+    `;
 
     const { stdout } = await execPromise(command);
 
-    const directUrl = stdout.trim().split('\n')[0];
+    const link = stdout.trim().split('\n')[0];
 
     res.json({
       success: true,
-      directUrl
+      directUrl: link
     });
 
-  } catch (error) {
+  } catch (err) {
 
-    console.error(error);
+    console.error(err);
 
     res.status(500).json({
       error: 'Failed to get link',
-      details: error.message
+      details: err.message
     });
   }
 });
@@ -142,16 +151,21 @@ app.post('/api/download', async (req, res) => {
 
     const output = `./downloads/video_${time}.%(ext)s`;
 
-    let command;
+    let format = 'bestvideo+bestaudio/best';
 
     if (quality) {
       const q = quality.replace('p', '');
+      format = `bestvideo[height<=${q}]+bestaudio/best`;
+    }
 
-      command = `python3 -m yt_dlp -f "bestvideo[height<=${q}]+bestaudio/best" --merge-output-format mp4 -o "${output}" "${url}"`;
-    }
-    else {
-      command = `python3 -m yt_dlp -f "bestvideo+bestaudio/best" --merge-output-format mp4 -o "${output}" "${url}"`;
-    }
+    const command = `
+      python3 -m yt_dlp
+      --cookies "${COOKIES_PATH}"
+      -f "${format}"
+      --merge-output-format mp4
+      -o "${output}"
+      "${url}"
+    `;
 
     await execPromise(command);
 
@@ -159,29 +173,29 @@ app.post('/api/download', async (req, res) => {
 
     const file = files.find(f => f.includes(`video_${time}`));
 
-    if (!file) throw new Error('File not found');
+    if (!file) throw new Error('File missing');
 
-    const downloadUrl = `${req.protocol}://${req.get('host')}/downloads/${file}`;
+    const link = `${req.protocol}://${req.get('host')}/downloads/${file}`;
 
     res.json({
       success: true,
       filename: file,
-      downloadUrl
+      downloadUrl: link
     });
 
-  } catch (error) {
+  } catch (err) {
 
-    console.error(error);
+    console.error(err);
 
     res.status(500).json({
       error: 'Download failed',
-      details: error.message
+      details: err.message
     });
   }
 });
 
 
-// Cleanup
+// ================= CLEANUP =================
 setInterval(() => {
 
   if (!fs.existsSync('./downloads')) return;
@@ -205,6 +219,7 @@ setInterval(() => {
 }, 3600000);
 
 
+// ================= START =================
 app.listen(PORT, () => {
-  console.log(`Server running on ${PORT}`);
+  console.log(`🚀 Server running on ${PORT}`);
 });
