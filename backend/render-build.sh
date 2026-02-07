@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
 
-apt-get update
-apt-get install -y yt-dlp ffmpeg
-
-npm install
+pip install --upgrade pip
+pip install yt-dlp
