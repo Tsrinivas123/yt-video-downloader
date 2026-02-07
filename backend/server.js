@@ -9,6 +9,7 @@ const execPromise = util.promisify(exec);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+
 /* ===============================
    CREATE COOKIES FILE FROM ENV
 ================================ */
@@ -21,6 +22,7 @@ if (process.env.YT_COOKIES) {
 } else {
   console.log('⚠️ No YT_COOKIES in ENV');
 }
+
 
 /* ===============================
    MIDDLEWARE
@@ -38,6 +40,7 @@ app.use(cors({
 app.use(express.json());
 app.use('/downloads', express.static('downloads'));
 
+
 /* ===============================
    CREATE DOWNLOADS FOLDER
 ================================ */
@@ -45,6 +48,7 @@ app.use('/downloads', express.static('downloads'));
 if (!fs.existsSync('./downloads')) {
   fs.mkdirSync('./downloads');
 }
+
 
 /* ===============================
    HEALTH CHECK
@@ -57,6 +61,7 @@ app.get('/', (req, res) => {
   });
 });
 
+
 /* ===============================
    VIDEO INFO
 ================================ */
@@ -66,16 +71,12 @@ app.post('/api/video-info', async (req, res) => {
 
     const { url } = req.body;
 
-    if (!url) return res.status(400).json({ error: 'URL required' });
+    if (!url) {
+      return res.status(400).json({ error: 'URL required' });
+    }
 
-    const cmd = `
-      python3 -m yt_dlp
-      --cookies "${COOKIES_PATH}"
-      --js-runtime node
-      --dump-json
-      --no-playlist
-      "${url}"
-    `;
+    // ✅ SINGLE LINE COMMAND
+    const cmd = `python3 -m yt_dlp --cookies "${COOKIES_PATH}" --js-runtime node --dump-json --no-playlist "${url}"`;
 
     const { stdout } = await execPromise(cmd);
 
@@ -108,6 +109,7 @@ app.post('/api/video-info', async (req, res) => {
   }
 });
 
+
 /* ===============================
    GET LINK
 ================================ */
@@ -124,14 +126,8 @@ app.post('/api/get-link', async (req, res) => {
       format = `bestvideo[height<=${q}]+bestaudio/best`;
     }
 
-    const cmd = `
-      python3 -m yt_dlp
-      --cookies "${COOKIES_PATH}"
-      --js-runtime node
-      -f "${format}"
-      --get-url
-      "${url}"
-    `;
+    // ✅ SINGLE LINE COMMAND
+    const cmd = `python3 -m yt_dlp --cookies "${COOKIES_PATH}" --js-runtime node -f "${format}" --get-url "${url}"`;
 
     const { stdout } = await execPromise(cmd);
 
@@ -150,6 +146,7 @@ app.post('/api/get-link', async (req, res) => {
     });
   }
 });
+
 
 /* ===============================
    DOWNLOAD
@@ -171,15 +168,8 @@ app.post('/api/download', async (req, res) => {
       format = `bestvideo[height<=${q}]+bestaudio/best`;
     }
 
-    const cmd = `
-      python3 -m yt_dlp
-      --cookies "${COOKIES_PATH}"
-      --js-runtime node
-      -f "${format}"
-      --merge-output-format mp4
-      -o "${output}"
-      "${url}"
-    `;
+    // ✅ SINGLE LINE COMMAND
+    const cmd = `python3 -m yt_dlp --cookies "${COOKIES_PATH}" --js-runtime node -f "${format}" --merge-output-format mp4 -o "${output}" "${url}"`;
 
     await execPromise(cmd);
 
@@ -204,6 +194,7 @@ app.post('/api/download', async (req, res) => {
   }
 });
 
+
 /* ===============================
    CLEANUP
 ================================ */
@@ -224,8 +215,9 @@ setInterval(() => {
 
 }, 3600000);
 
+
 /* ===============================
-   START
+   START SERVER
 ================================ */
 
 app.listen(PORT, () => {
