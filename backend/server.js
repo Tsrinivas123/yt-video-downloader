@@ -9,10 +9,24 @@ const execPromise = util.promisify(exec);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Cookies file path
+/* ===============================
+   CREATE COOKIES FILE FROM ENV
+================================ */
+
 const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
 
-// Middleware
+if (process.env.YT_COOKIES) {
+  fs.writeFileSync(COOKIES_PATH, process.env.YT_COOKIES);
+  console.log('✅ Cookies file created from ENV');
+} else {
+  console.log('⚠️ No YT_COOKIES found in ENV');
+}
+
+
+/* ===============================
+   MIDDLEWARE
+================================ */
+
 app.use(cors({
   origin: [
     'http://localhost:5173',
@@ -25,15 +39,24 @@ app.use(cors({
 app.use(express.json());
 app.use('/downloads', express.static('downloads'));
 
-// Create downloads folder
+
+/* ===============================
+   CREATE DOWNLOADS FOLDER
+================================ */
+
 if (!fs.existsSync('./downloads')) {
   fs.mkdirSync('./downloads');
 }
 
-// Health check
+
+/* ===============================
+   HEALTH CHECK
+================================ */
+
 app.get('/', (req, res) => {
   res.json({
     status: 'Backend Running ✅',
+    cookiesLoaded: !!process.env.YT_COOKIES,
     endpoints: {
       videoInfo: '/api/video-info',
       getLink: '/api/get-link',
@@ -43,7 +66,10 @@ app.get('/', (req, res) => {
 });
 
 
-// ================= VIDEO INFO =================
+/* ===============================
+   VIDEO INFO
+================================ */
+
 app.post('/api/video-info', async (req, res) => {
   try {
 
@@ -53,15 +79,7 @@ app.post('/api/video-info', async (req, res) => {
       return res.status(400).json({ error: 'URL required' });
     }
 
-    console.log('Fetching info:', url);
-
-    const command = `
-      python3 -m yt_dlp 
-      --cookies "${COOKIES_PATH}" 
-      --dump-json 
-      --no-playlist 
-      "${url}"
-    `;
+    const command = `python3 -m yt_dlp --cookies "${COOKIES_PATH}" --dump-json --no-playlist "${url}"`;
 
     const { stdout } = await execPromise(command);
 
@@ -99,7 +117,10 @@ app.post('/api/video-info', async (req, res) => {
 });
 
 
-// ================= GET LINK =================
+/* ===============================
+   GET DIRECT LINK
+================================ */
+
 app.post('/api/get-link', async (req, res) => {
   try {
 
@@ -112,13 +133,7 @@ app.post('/api/get-link', async (req, res) => {
       format = `bestvideo[height<=${q}]+bestaudio/best`;
     }
 
-    const command = `
-      python3 -m yt_dlp 
-      --cookies "${COOKIES_PATH}"
-      -f "${format}"
-      --get-url
-      "${url}"
-    `;
+    const command = `python3 -m yt_dlp --cookies "${COOKIES_PATH}" -f "${format}" --get-url "${url}"`;
 
     const { stdout } = await execPromise(command);
 
@@ -141,7 +156,10 @@ app.post('/api/get-link', async (req, res) => {
 });
 
 
-// ================= DOWNLOAD =================
+/* ===============================
+   DOWNLOAD
+================================ */
+
 app.post('/api/download', async (req, res) => {
   try {
 
@@ -158,14 +176,7 @@ app.post('/api/download', async (req, res) => {
       format = `bestvideo[height<=${q}]+bestaudio/best`;
     }
 
-    const command = `
-      python3 -m yt_dlp
-      --cookies "${COOKIES_PATH}"
-      -f "${format}"
-      --merge-output-format mp4
-      -o "${output}"
-      "${url}"
-    `;
+    const command = `python3 -m yt_dlp --cookies "${COOKIES_PATH}" -f "${format}" --merge-output-format mp4 -o "${output}" "${url}"`;
 
     await execPromise(command);
 
@@ -195,7 +206,10 @@ app.post('/api/download', async (req, res) => {
 });
 
 
-// ================= CLEANUP =================
+/* ===============================
+   CLEANUP
+================================ */
+
 setInterval(() => {
 
   if (!fs.existsSync('./downloads')) return;
@@ -219,7 +233,10 @@ setInterval(() => {
 }, 3600000);
 
 
-// ================= START =================
+/* ===============================
+   START SERVER
+================================ */
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on ${PORT}`);
 });
