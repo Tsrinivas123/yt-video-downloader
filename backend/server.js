@@ -17,11 +17,10 @@ const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
 
 if (process.env.YT_COOKIES) {
   fs.writeFileSync(COOKIES_PATH, process.env.YT_COOKIES);
-  console.log('✅ Cookies file created from ENV');
+  console.log('✅ Cookies loaded from ENV');
 } else {
-  console.log('⚠️ No YT_COOKIES found in ENV');
+  console.log('⚠️ No YT_COOKIES in ENV');
 }
-
 
 /* ===============================
    MIDDLEWARE
@@ -39,7 +38,6 @@ app.use(cors({
 app.use(express.json());
 app.use('/downloads', express.static('downloads'));
 
-
 /* ===============================
    CREATE DOWNLOADS FOLDER
 ================================ */
@@ -48,7 +46,6 @@ if (!fs.existsSync('./downloads')) {
   fs.mkdirSync('./downloads');
 }
 
-
 /* ===============================
    HEALTH CHECK
 ================================ */
@@ -56,15 +53,9 @@ if (!fs.existsSync('./downloads')) {
 app.get('/', (req, res) => {
   res.json({
     status: 'Backend Running ✅',
-    cookiesLoaded: !!process.env.YT_COOKIES,
-    endpoints: {
-      videoInfo: '/api/video-info',
-      getLink: '/api/get-link',
-      download: '/api/download'
-    }
+    cookiesLoaded: !!process.env.YT_COOKIES
   });
 });
-
 
 /* ===============================
    VIDEO INFO
@@ -75,13 +66,18 @@ app.post('/api/video-info', async (req, res) => {
 
     const { url } = req.body;
 
-    if (!url) {
-      return res.status(400).json({ error: 'URL required' });
-    }
+    if (!url) return res.status(400).json({ error: 'URL required' });
 
-    const command = `python3 -m yt_dlp --cookies "${COOKIES_PATH}" --dump-json --no-playlist "${url}"`;
+    const cmd = `
+      python3 -m yt_dlp
+      --cookies "${COOKIES_PATH}"
+      --js-runtime node
+      --dump-json
+      --no-playlist
+      "${url}"
+    `;
 
-    const { stdout } = await execPromise(command);
+    const { stdout } = await execPromise(cmd);
 
     const data = JSON.parse(stdout);
 
@@ -90,8 +86,7 @@ app.post('/api/video-info', async (req, res) => {
       .map(f => ({
         quality: `${f.height}p`,
         ext: f.ext,
-        fps: f.fps || 30,
-        size: f.filesize || 'Unknown'
+        fps: f.fps || 30
       }))
       .sort((a, b) => parseInt(b.quality) - parseInt(a.quality));
 
@@ -99,10 +94,7 @@ app.post('/api/video-info', async (req, res) => {
       title: data.title,
       thumbnail: data.thumbnail,
       duration: data.duration,
-      uploader: data.uploader,
-      views: data.view_count,
-      formats,
-      url
+      formats
     });
 
   } catch (err) {
@@ -110,15 +102,14 @@ app.post('/api/video-info', async (req, res) => {
     console.error(err);
 
     res.status(500).json({
-      error: 'Failed to fetch info',
+      error: 'Video info failed',
       details: err.message
     });
   }
 });
 
-
 /* ===============================
-   GET DIRECT LINK
+   GET LINK
 ================================ */
 
 app.post('/api/get-link', async (req, res) => {
@@ -133,15 +124,20 @@ app.post('/api/get-link', async (req, res) => {
       format = `bestvideo[height<=${q}]+bestaudio/best`;
     }
 
-    const command = `python3 -m yt_dlp --cookies "${COOKIES_PATH}" -f "${format}" --get-url "${url}"`;
+    const cmd = `
+      python3 -m yt_dlp
+      --cookies "${COOKIES_PATH}"
+      --js-runtime node
+      -f "${format}"
+      --get-url
+      "${url}"
+    `;
 
-    const { stdout } = await execPromise(command);
-
-    const link = stdout.trim().split('\n')[0];
+    const { stdout } = await execPromise(cmd);
 
     res.json({
       success: true,
-      directUrl: link
+      directUrl: stdout.trim().split('\n')[0]
     });
 
   } catch (err) {
@@ -149,12 +145,11 @@ app.post('/api/get-link', async (req, res) => {
     console.error(err);
 
     res.status(500).json({
-      error: 'Failed to get link',
+      error: 'Get link failed',
       details: err.message
     });
   }
 });
-
 
 /* ===============================
    DOWNLOAD
@@ -176,22 +171,26 @@ app.post('/api/download', async (req, res) => {
       format = `bestvideo[height<=${q}]+bestaudio/best`;
     }
 
-    const command = `python3 -m yt_dlp --cookies "${COOKIES_PATH}" -f "${format}" --merge-output-format mp4 -o "${output}" "${url}"`;
+    const cmd = `
+      python3 -m yt_dlp
+      --cookies "${COOKIES_PATH}"
+      --js-runtime node
+      -f "${format}"
+      --merge-output-format mp4
+      -o "${output}"
+      "${url}"
+    `;
 
-    await execPromise(command);
+    await execPromise(cmd);
 
-    const files = fs.readdirSync('./downloads');
+    const file = fs.readdirSync('./downloads')
+      .find(f => f.includes(`video_${time}`));
 
-    const file = files.find(f => f.includes(`video_${time}`));
-
-    if (!file) throw new Error('File missing');
-
-    const link = `${req.protocol}://${req.get('host')}/downloads/${file}`;
+    if (!file) throw new Error('File not found');
 
     res.json({
       success: true,
-      filename: file,
-      downloadUrl: link
+      downloadUrl: `${req.protocol}://${req.get('host')}/downloads/${file}`
     });
 
   } catch (err) {
@@ -205,7 +204,6 @@ app.post('/api/download', async (req, res) => {
   }
 });
 
-
 /* ===============================
    CLEANUP
 ================================ */
@@ -214,17 +212,11 @@ setInterval(() => {
 
   if (!fs.existsSync('./downloads')) return;
 
-  const files = fs.readdirSync('./downloads');
-
-  const now = Date.now();
-
-  files.forEach(f => {
+  fs.readdirSync('./downloads').forEach(f => {
 
     const p = path.join('./downloads', f);
 
-    const s = fs.statSync(p);
-
-    if (now - s.mtimeMs > 3600000) {
+    if (Date.now() - fs.statSync(p).mtimeMs > 3600000) {
       fs.unlinkSync(p);
     }
 
@@ -232,9 +224,8 @@ setInterval(() => {
 
 }, 3600000);
 
-
 /* ===============================
-   START SERVER
+   START
 ================================ */
 
 app.listen(PORT, () => {
