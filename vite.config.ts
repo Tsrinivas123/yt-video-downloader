@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
 
   return {
-    base: './', // ✅ IMPORTANT FOR RENDER
+    base: '/', // ✅ IMPORTANT FOR RENDER
 
     server: {
       port: 3000,
