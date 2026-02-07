@@ -1,5 +1,6 @@
 // services/youtubeService.ts
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'https://vidvault-backend-n3wb.onrender.com/api';
+
 
 export interface VideoFormat {
   format_id: string;
